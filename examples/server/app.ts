@@ -105,7 +105,8 @@ app.get('/auth/google/callback', async (req: Request, res: Response) => {
 	try {
 		// Check for errors from Google
 		if (error) {
-			throw new Error(`Google error: ${error}`);
+			console.warn('Google OAuth returned error:', error);
+			throw new Error('Google authentication error');
 		}
 
 		// Validate required parameters
