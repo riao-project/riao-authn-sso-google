@@ -1,7 +1,7 @@
 {
-	"name": "{{project-name}}",
+	"name": "authn-sso-google",
 	"version": "1.0.0",
-	"description": "{{project-name}}",
+	"description": "authn-sso-google",
 	"private": "true",
 	"typescript-template": {
 		"base": "1.0.1",
@@ -47,13 +47,13 @@
 	},
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/{{project-name}}/{{project-name}}.git"
+		"url": "git+https://github.com/authn-sso-google/authn-sso-google.git"
 	},
-	"author": "{{project-name}}",
+	"author": "authn-sso-google",
 	"license": "MIT",
 	"bugs": {
-		"url": "https://github.com/{{project-name}}/{{project-name}}/issues"
+		"url": "https://github.com/authn-sso-google/authn-sso-google/issues"
 	},
-	"homepage": "https://github.com/{{project-name}}/{{project-name}}#readme",
+	"homepage": "https://github.com/authn-sso-google/authn-sso-google#readme",
 	"keywords": []
 }
