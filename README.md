@@ -87,7 +87,7 @@ const googleAuth = new GoogleAuthentication({
 ### Get Authorization URL
 
 ```typescript
-const state = generateRandomState(); // Generate a random state string
+const state = await googleAuth.generateState(); // Generate and store state for CSRF protection
 const authUrl = googleAuth.getAuthorizationUrl(state);
 
 // Redirect user to authUrl
