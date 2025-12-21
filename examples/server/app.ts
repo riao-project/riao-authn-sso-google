@@ -140,9 +140,17 @@ app.get('/auth/google/callback', async (req: Request, res: Response) => {
  */
 app.get('/logout', (req: Request, res: Response) => {
 	const session = (req as SessionRequest).session;
-	session.userId = null;
-	session.userEmail = null;
-	res.redirect('/');
+
+	if (!session) {
+		return res.redirect('/');
+	}
+
+	session.destroy((err) => {
+		if (err) {
+			console.error('Error destroying session during logout:', err);
+		}
+		res.redirect('/');
+	});
 });
 
 /**
