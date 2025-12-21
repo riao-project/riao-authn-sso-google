@@ -177,7 +177,7 @@ async function initialize() {
 
 	app.listen(port, () => {
 		console.log(`Server running on http://localhost:${port}`);
-		console.log(`Login page: http://localhost:${port}/login`);
+		console.log(`Login page: http://localhost:${port}/`);
 		console.log(
 			`Callback URL: http://localhost:${port}/auth/google/callback`
 		);
