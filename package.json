@@ -1,7 +1,7 @@
 {
-	"name": "authn-sso-google",
+	"name": "@riao/authn-sso-google",
 	"version": "1.0.0",
-	"description": "authn-sso-google",
+	"description": "Google OAuth2/OIDC SSO authentication driver for riao-iam",
 	"private": "true",
 	"typescript-template": {
 		"base": "1.0.1",
@@ -22,6 +22,7 @@
 		"publish": "npm run script -- publish"
 	},
 	"dependencies": {
+		"@riao/authn-sso": "^1.0.0",
 		"@riao/dbal": "^3.8.0",
 		"@riao/iam": "^3.0.0"
 	},
@@ -29,10 +30,14 @@
 		"@istanbuljs/nyc-config-typescript": "^1.0.2",
 		"@riao/cli": "^3.0.1",
 		"@riao/postgres": "^3.5.0",
+		"@types/express": "^5.0.6",
+		"@types/express-session": "^1.18.2",
 		"@types/jasmine": "^5.1.4",
 		"@types/node": "^18.19.39",
 		"@typescript-eslint/eslint-plugin": "^7.13.1",
 		"eslint": "^8.57.0",
+		"express": "^5.2.1",
+		"express-session": "^1.18.2",
 		"jasmine": "^5.1.0",
 		"nyc": "^17.0.0",
 		"prettier": "^3.3.2",
@@ -47,13 +52,13 @@
 	},
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/authn-sso-google/authn-sso-google.git"
+		"url": "git+https://github.com/riao-project/authn-sso-google.git"
 	},
-	"author": "authn-sso-google",
+	"author": "Riao Project",
 	"license": "MIT",
 	"bugs": {
-		"url": "https://github.com/authn-sso-google/authn-sso-google/issues"
+		"url": "https://github.com/riao-project/authn-sso-google/issues"
 	},
-	"homepage": "https://github.com/authn-sso-google/authn-sso-google#readme",
-	"keywords": []
+	"homepage": "https://github.com/riao-project/authn-sso-google#readme",
+	"keywords": ["oauth2", "oidc", "google", "sso", "riao", "iam"]
 }
