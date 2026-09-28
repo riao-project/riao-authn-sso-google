@@ -1,6 +1,6 @@
 {
 	"name": "@riao/authn-sso-google",
-	"version": "1.0.0",
+	"version": "2.0.0",
 	"description": "Google OAuth2/OIDC SSO authentication driver for riao-iam",
 	"private": "true",
 	"typescript-template": {
