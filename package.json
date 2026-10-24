@@ -1,6 +1,6 @@
 {
 	"name": "@riao/authn-sso-google",
-	"version": "2.0.0",
+	"version": "3.0.0",
 	"description": "Google OAuth2/OIDC SSO authentication driver for riao-iam",
 	"private": "true",
 	"typescript-template": {
@@ -22,9 +22,9 @@
 		"publish": "npm run script -- publish"
 	},
 	"dependencies": {
-		"@riao/authn-sso": "^2.0.0",
+		"@riao/authn-sso": "^3.0.0",
 		"@riao/dbal": "^3.8.0",
-		"@riao/iam": "^4.0.0"
+		"@riao/iam": "^5.0.0"
 	},
 	"devDependencies": {
 		"@istanbuljs/nyc-config-typescript": "^1.0.2",

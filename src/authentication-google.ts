@@ -3,6 +3,7 @@ import {
 	SSOUserInfo,
 	SSOTokenResponse,
 	SSOAuthenticationOptions,
+	throwProviderResponseError,
 } from '@riao/authn-sso';
 import { Principal } from '@riao/iam';
 
@@ -31,7 +32,7 @@ export class GoogleAuthentication<
 
 	constructor(options: GoogleAuthenticationOptions) {
 		super({
-			db: options.db,
+			...options,
 			provider: 'google',
 		});
 		this.clientId = options.clientId;
@@ -86,14 +87,11 @@ export class GoogleAuthentication<
 				grant_type: 'authorization_code',
 			}).toString(),
 		});
-
 		if (!response.ok) {
-			throw new Error(
-				`Google token exchange failed: ${response.status}` +
-					` ${response.statusText}`
+			await throwProviderResponseError(
+				'Google token exchange', response
 			);
 		}
-
 		return response.json() as Promise<SSOTokenResponse>;
 	}
 
@@ -111,16 +109,11 @@ export class GoogleAuthentication<
 				},
 			}
 		);
-
 		if (!response.ok) {
-			const errorBody = await response.text();
-			throw new Error(
-				`Failed to fetch Google user info: ${response.status}` +
-					` ${response.statusText}. ` +
-					`Error details: ${errorBody}`
+			await throwProviderResponseError(
+				'Google user info', response, true
 			);
 		}
-
 		const userData = (await response.json()) as {
 			id: string;
 			email?: string;
@@ -159,14 +152,11 @@ export class GoogleAuthentication<
 				grant_type: 'refresh_token',
 			}).toString(),
 		});
-
 		if (!response.ok) {
-			throw new Error(
-				`Google token refresh failed: ${response.status}` +
-					` ${response.statusText}`
+			await throwProviderResponseError(
+				'Google token refresh', response
 			);
 		}
-
 		return response.json() as Promise<SSOTokenResponse>;
 	}
 }

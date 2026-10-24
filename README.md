@@ -98,18 +98,31 @@ res.redirect(authUrl);
 
 After user authorizes, Google redirects to your callback endpoint with `code` and `state`:
 
-```typescript
-const principal = await googleAuth.authenticate({
-	code: req.query.code as string,
-	state: req.query.state as string, // Validates CSRF protection
-});
+Pass the callback's `state` value to `authenticate` when the provider returns
+it; a supplied state is validated and consumed before code exchange.
 
-if (principal) {
-	// User authenticated successfully
-	// Create session, issue JWT, etc.
-} else {
-	// Authentication failed
-}
+```typescript
+app.get('/auth/google/callback', async (req, res) => {
+	const code = req.query['code'];
+	const state = req.query['state'];
+	if (typeof code !== 'string' ||
+		(state !== undefined && typeof state !== 'string')) {
+		res.redirect('/login?error=authentication_failed');
+		return;
+	}
+
+	const credentials: { code: string; state?: string } = { code };
+	if (typeof state === 'string') {
+		credentials.state = state;
+	}
+	const principal = await googleAuth.authenticate(credentials);
+
+	if (principal) {
+		// Store the authenticated principal in the application session.
+	} else {
+		res.redirect('/login?error=authentication_failed');
+	}
+});
 ```
 
 ### Refresh Tokens
@@ -118,27 +131,54 @@ Automatically refresh access tokens using stored refresh tokens:
 
 ```typescript
 // Retrieve stored token record for user
-const tokenRecord = await ssoTokenRepo.findOneBy({ principal_id: userId });
+// `principal` is the authenticated principal from the callback/session.
+const principalId = principal.id;
+const tokenRecord = await googleAuth.getStoredToken(principalId);
 
 // Refresh if expired
 if (tokenRecord && tokenRecord.expires_at < new Date()) {
-	const newTokens = await googleAuth['exchangeRefreshToken'](
-		tokenRecord.refresh_token!
-	);
-	
-	// Update token record with new values
-	tokenRecord.access_token = newTokens.access_token;
-	tokenRecord.expires_at = new Date(Date.now() + newTokens.expires_in * 1000);
-	await ssoTokenRepo.update(tokenRecord);
+	await googleAuth.refreshAccessToken(principalId);
 }
 ```
 
 ## Complete Example
 
+Version 3 requires `@riao/authn-sso ^3.0.0` and `@riao/iam ^5.0.0`.
+Before admitting v3 authentication traffic, run IAM migrations first, then
+the full ordered SSO migration package. Code is required; state is optional for
+baseline compatibility and is validated and consumed before code exchange
+when supplied. Invalid/expired/replayed state and inactive principals return
+`null` without replacement provisioning. State consumption is not atomic across
+concurrent callbacks, and state is not bound to a browser session. The driver
+does not regenerate the application's session after authentication.
+
+All inherited options are forwarded: encryption keys, `stateExpiryMinutes`,
+and `authenticationProtection`.
+Protection denial skips state/provider work and records no outcome. Expected
+rejection calls `onFailure` once; success calls `onSuccess` after persistence.
+Operational errors propagate without failure callbacks. Protection attempts
+are provider-scoped (`sso:google`, subject `google`) and contain no credentials.
+
+Direct exchange/refresh/userinfo APIs retain their response shapes and throw
+`ProviderAuthenticationRejectedError` for known OAuth/token rejection.
+Transport, outages, configuration and throttling errors remain operational;
+provider HTTP error messages omit raw response bodies.
+Direct `AuthenticationBlockedError` can carry `retryAfterSeconds`; blocked
+authentication returns `null` without retry timing. Map typed errors to generic
+auth/rate-limit responses and operational errors to generic unavailable responses
+at your HTTP boundary. Never expose raw errors.
+
 ```typescript
 import express from 'express';
 import session from 'express-session';
 import { GoogleAuthentication } from '@riao/authn-sso-google';
+import { Principal } from '@riao/iam';
+
+declare module 'express-session' {
+	interface SessionData {
+		principal?: Principal;
+	}
+}
 
 const app = express();
 
@@ -166,27 +206,40 @@ app.get('/auth/google', async (req, res) => {
 		const authUrl = googleAuth.getAuthorizationUrl(state);
 		res.redirect(authUrl);
 	} catch (error) {
+		console.error('Google authentication setup failed', {
+			errorType: error instanceof Error ? error.name : typeof error,
+		});
 		res.redirect('/login?error=auth_error');
 	}
 });
 
 // Handle Google callback
 app.get('/auth/google/callback', async (req, res) => {
-	const { code, state } = req.query as { code: string; state: string };
+	const code = req.query['code'];
+	const state = req.query['state'];
 	
 	try {
+		if (typeof code !== 'string' ||
+			(state !== undefined && typeof state !== 'string')) {
+			return res.redirect('/login?error=auth_failed');
+		}
 		// authenticate() validates the state against the database
 		// and handles the OAuth code exchange
-		const principal = await googleAuth.authenticate({ code, state });
+		const credentials = typeof state === 'string'
+			? { code, state }
+			: { code };
+		const principal = await googleAuth.authenticate(credentials);
 		
 		if (principal) {
-			req.session.userId = principal.id;
+			req.session.principal = principal;
 			res.redirect('/dashboard');
 		} else {
 			res.redirect('/login?error=auth_failed');
 		}
 	} catch (error) {
-		console.error('Authentication error:', error);
+		console.error('Google authentication operation failed', {
+			errorType: error instanceof Error ? error.name : typeof error,
+		});
 		res.redirect('/login?error=auth_error');
 	}
 });
@@ -194,9 +247,10 @@ app.get('/auth/google/callback', async (req, res) => {
 
 ## Troubleshooting
 
-### "State validation failed or state not found"
+### Invalid state (`authenticate` returns `null`)
 
-This error occurs when the state parameter is not properly stored in the database before redirecting to Google.
+This rejection occurs when state was not stored before redirect, expired,
+or was already consumed. Direct `validateState` throws a typed rejection.
 
 **Solution:** Use `generateState()` to create and store the state:
 
