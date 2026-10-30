@@ -98,23 +98,24 @@ app.get('/auth/google', async (req: Request, res: Response) => {
  * Google OAuth callback handler
  */
 app.get('/auth/google/callback', async (req: Request, res: Response) => {
-	const { code, state, error } = req.query as {
-		code?: string;
-		state?: string;
-		error?: string;
-	};
+	const code = req.query['code'];
+	const state = req.query['state'];
+	const error = req.query['error'];
 
 	const session = req.session;
 
 	try {
 		// Check for errors from Google
-		if (error) {
+		if (typeof error === 'string' && error) {
 			console.warn('Google OAuth returned error:', error);
 			throw new Error('Google authentication error');
 		}
 
 		// Validate required parameters
-		if (!code || !state) {
+		if (
+			typeof code !== 'string' || !code ||
+			typeof state !== 'string' || !state
+		) {
 			throw new Error('Missing code or state parameter');
 		}
 		if (!session.oauthState || session.oauthState !== state) {
