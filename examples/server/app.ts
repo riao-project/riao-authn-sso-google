@@ -15,6 +15,7 @@ declare module 'express-session' {
 		userId?: string | null;
 		userEmail?: string | null;
 		oauthState?: string;
+		oauthStateBinding?: string;
 	}
 }
 
@@ -80,8 +81,9 @@ app.get('/', (req: Request, res: Response) => {
  */
 app.get('/auth/google', async (req: Request, res: Response) => {
 	try {
-		const state = await googleAuth.generateState();
+		const { state, stateBinding } = await googleAuth.generateState();
 		req.session.oauthState = state;
+		req.session.oauthStateBinding = stateBinding;
 		const authUrl = googleAuth.getAuthorizationUrl(state);
 		await new Promise<void>((resolve, reject) => {
 			req.session.save((error) => error ? reject(error) : resolve());
@@ -118,10 +120,17 @@ app.get('/auth/google/callback', async (req: Request, res: Response) => {
 		) {
 			throw new Error('Missing code or state parameter');
 		}
-		if (!session.oauthState || session.oauthState !== state) {
+		const stateBinding = session.oauthStateBinding;
+		if (
+			!session.oauthState ||
+			session.oauthState !== state ||
+			typeof stateBinding !== 'string' ||
+			!stateBinding
+		) {
 			throw new Error('Invalid OAuth state');
 		}
 		delete session.oauthState;
+		delete session.oauthStateBinding;
 		await new Promise<void>((resolve, reject) => {
 			session.save((saveError) =>
 				saveError ? reject(saveError) : resolve()
@@ -132,6 +141,7 @@ app.get('/auth/google/callback', async (req: Request, res: Response) => {
 		const principal = await googleAuth.authenticate({
 			code,
 			state,
+			stateBinding,
 		});
 
 		if (!principal) {
