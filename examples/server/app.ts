@@ -139,15 +139,15 @@ app.get('/auth/google/callback', async (req: Request, res: Response) => {
 		}
 
 		await new Promise<void>((resolve, reject) => {
-			session.regenerate((regenerateError) =>
+			req.session.regenerate((regenerateError) =>
 				regenerateError ? reject(regenerateError) : resolve()
 			);
 		});
-		session.userId = principal.id;
-		session.userEmail = principal.name;
+		req.session.userId = principal.id;
+		req.session.userEmail = principal.name;
 
 		await new Promise<void>((resolve, reject) => {
-			session.save((saveError) =>
+			req.session.save((saveError) =>
 				saveError ? reject(saveError) : resolve()
 			);
 		});
