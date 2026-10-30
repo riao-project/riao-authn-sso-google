@@ -26,6 +26,7 @@ describe('Google provider contract (isolated)', () => {
 		auth = new GoogleAuthentication({
 			...options, stateExpiryMinutes: 2,
 			authenticationProtection: protection,
+			getProtectionSubject: () => 'google-test-session',
 			encryptionPublicKey: keys.publicKey,
 			encryptionPrivateKey: keys.privateKey,
 		});
