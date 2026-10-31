@@ -98,11 +98,6 @@ res.redirect(authUrl);
 
 After user authorizes, Google redirects to your callback endpoint with `code` and `state`:
 
-Bind generated state to the initiating browser session, reject missing or
-mismatched callback state, and remove it before code exchange. After successful
-authentication, regenerate the session ID before writing authenticated session
-data. Log operational details server-side and show only generic errors to users.
-
 ```typescript
 const principal = await googleAuth.authenticate({
 	code: req.query.code as string,
