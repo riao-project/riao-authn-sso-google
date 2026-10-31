@@ -224,8 +224,7 @@ app.get('/auth/google/callback', async (req, res) => {
 
 ### Invalid state (`authenticate` returns `null`)
 
-This rejection occurs when state was not stored before redirect, expired,
-or was already consumed. Direct `validateState` throws a typed rejection.
+This rejection occurs when state was not stored before redirect, expired, or was already consumed. Direct `validateState` throws a typed rejection.
 
 **Solution:** Use `generateState()` to create and store the state:
 
