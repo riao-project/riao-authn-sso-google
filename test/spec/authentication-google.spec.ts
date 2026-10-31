@@ -198,7 +198,7 @@ describe('GoogleAuthentication', () => {
 			}
 			catch (error) {
 				expect((error as Error).message).toContain(
-					'Failed to fetch Google user info'
+					'Google user info failed: 401'
 				);
 			}
 		});
