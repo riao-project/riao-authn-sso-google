@@ -98,15 +98,22 @@ export class GoogleAuthentication<
 	 */
 	protected async getUserInfo(accessToken: string): Promise<SSOUserInfo> {
 		const data = await requestProviderJson(
-			'https://www.googleapis.com/oauth2/v2/userinfo', {
+			'https://www.googleapis.com/oauth2/v2/userinfo',
+			{
 				method: 'GET',
 				headers: {
 					Authorization: `Bearer ${accessToken}`,
 					'Content-Type': 'application/json',
 				},
-			}, 'Google user info', this.requestTimeoutMs, true);
+			},
+			'Google user info',
+			this.requestTimeoutMs,
+			true
+		);
 		validateProviderUser(
-			data, ['email', 'name', 'picture', 'locale'], true
+			data,
+			['email', 'name', 'picture', 'locale'],
+			true
 		);
 		if (!isProviderString(data['email'])) {
 			throw new Error('Malformed Google user response: missing email');
