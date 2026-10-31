@@ -143,31 +143,6 @@ if (tokenRecord && tokenRecord.expires_at < new Date()) {
 
 ## Complete Example
 
-Version 3 requires `@riao/authn-sso ^3.0.0` and `@riao/iam ^5.0.0`.
-Before admitting v3 authentication traffic, run IAM migrations first, then
-the full ordered SSO migration package. Code is required; state is optional for
-baseline compatibility and is validated and consumed before code exchange
-when supplied. Invalid/expired/replayed state and inactive principals return
-`null` without replacement provisioning. State consumption is not atomic across
-concurrent callbacks, and state is not bound to a browser session. The driver
-does not regenerate the application's session after authentication.
-
-All inherited options are forwarded: encryption keys, `stateExpiryMinutes`,
-and `authenticationProtection`.
-Protection denial skips state/provider work and records no outcome. Expected
-rejection calls `onFailure` once; success calls `onSuccess` after persistence.
-Operational errors propagate without failure callbacks. Protection attempts
-are provider-scoped (`sso:google`, subject `google`) and contain no credentials.
-
-Direct exchange/refresh/userinfo APIs retain their response shapes and throw
-`ProviderAuthenticationRejectedError` for known OAuth/token rejection.
-Transport, outages, configuration and throttling errors remain operational;
-provider HTTP error messages omit raw response bodies.
-Direct `AuthenticationBlockedError` can carry `retryAfterSeconds`; blocked
-authentication returns `null` without retry timing. Map typed errors to generic
-auth/rate-limit responses and operational errors to generic unavailable responses
-at your HTTP boundary. Never expose raw errors.
-
 ```typescript
 import express from 'express';
 import session from 'express-session';
