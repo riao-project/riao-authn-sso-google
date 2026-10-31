@@ -7,11 +7,13 @@ import { env } from './env';
 import { createDatabase, runMigrations } from '../../test/database';
 import { maindb } from '../../database/main';
 import { AuthMigrations } from '@riao/iam/auth/auth-migrations';
+import { Principal } from '@riao/iam';
 // eslint-disable-next-line max-len
 import { AuthenticationSSOMigrations } from '@riao/authn-sso/authentication-sso-migrations';
 
 declare module 'express-session' {
 	interface SessionData {
+		principal?: Principal;
 		userId?: string | null;
 		userEmail?: string | null;
 		oauthState?: string;
@@ -44,13 +46,19 @@ app.use(
 );
 
 // Initialize Google authentication
-const googleAuth = new GoogleAuthentication({
+const googleAuth = new GoogleAuthentication<Principal>({
 	db,
 	clientId: env.GOOGLE_CLIENT_ID,
 	clientSecret: env.GOOGLE_CLIENT_SECRET,
 	redirectUri: env.GOOGLE_REDIRECT_URI,
 	scopes: ['openid', 'profile', 'email'],
 });
+
+function logSafeFailure(operation: string, error: unknown): void {
+	console.error(operation, {
+		errorType: error instanceof Error ? error.name : typeof error,
+	});
+}
 
 export type SessionRequest = Request;
 
@@ -60,7 +68,7 @@ export type SessionRequest = Request;
  * Home page
  */
 app.get('/', (req: Request, res: Response) => {
-	const session = (req as SessionRequest).session;
+	const session = req.session;
 	if (session.userId) {
 		res.send(`
 			<h1>Welcome!</h1>
@@ -91,7 +99,7 @@ app.get('/auth/google', async (req: Request, res: Response) => {
 		res.redirect(authUrl);
 	}
 	catch (error) {
-		console.error('Failed to initiate authentication:', error);
+		logSafeFailure('Google authentication setup failed', error);
 		res.redirect('/?error=authentication_unavailable');
 	}
 });
@@ -109,7 +117,6 @@ app.get('/auth/google/callback', async (req: Request, res: Response) => {
 	try {
 		// Check for errors from Google
 		if (typeof error === 'string' && error) {
-			console.warn('Google OAuth returned error:', error);
 			throw new Error('Google authentication error');
 		}
 
@@ -153,6 +160,7 @@ app.get('/auth/google/callback', async (req: Request, res: Response) => {
 				regenerateError ? reject(regenerateError) : resolve()
 			);
 		});
+		req.session.principal = principal;
 		req.session.userId = principal.id;
 		req.session.userEmail = principal.name;
 
@@ -164,7 +172,7 @@ app.get('/auth/google/callback', async (req: Request, res: Response) => {
 		res.redirect('/');
 	}
 	catch (error) {
-		console.error('Authentication error:', error);
+		logSafeFailure('Google authentication operation failed', error);
 		res.redirect('/?error=authentication_failed');
 	}
 });
@@ -181,7 +189,7 @@ app.get('/logout', (req: Request, res: Response) => {
 
 	session.destroy((err) => {
 		if (err) {
-			console.error('Error destroying session during logout:', err);
+			logSafeFailure('Google session logout failed', err);
 		}
 		res.redirect('/');
 	});
@@ -198,7 +206,7 @@ app.get('/dashboard', (req: Request, res: Response) => {
 
 	res.send(`
 		<h1>Dashboard</h1>
-		<p>User: ${session.userEmail}</p>
+		<p>Authenticated user</p>
 		<a href="/logout">Logout</a>
 	`);
 });
@@ -228,7 +236,7 @@ async function initialize() {
 }
 
 initialize().catch((err) => {
-	console.error('Failed to initialize application:', err);
+	logSafeFailure('Application initialization failed', err);
 	process.exit(1);
 });
 

@@ -87,10 +87,14 @@ const googleAuth = new GoogleAuthentication({
 ### Get Authorization URL
 
 ```typescript
-const state = await googleAuth.generateState(); // Generate and store state for CSRF protection
+const { state, stateBinding } = await googleAuth.generateState();
+req.session.oauthState = state;
+req.session.oauthStateBinding = stateBinding;
+await new Promise<void>((resolve, reject) => {
+	req.session.save((error) => error ? reject(error) : resolve());
+});
 const authUrl = googleAuth.getAuthorizationUrl(state);
 
-// Redirect user to authUrl
 res.redirect(authUrl);
 ```
 
@@ -98,18 +102,44 @@ res.redirect(authUrl);
 
 After user authorizes, Google redirects to your callback endpoint with `code` and `state`:
 
-```typescript
-const principal = await googleAuth.authenticate({
-	code: req.query.code as string,
-	state: req.query.state as string, // Validates CSRF protection
-});
+Require the callback's `state` to match the value saved in the browser session.
+Pass it and the saved session binding to `authenticate`; the state is consumed
+before the authorization code is exchanged.
 
-if (principal) {
-	// User authenticated successfully
-	// Create session, issue JWT, etc.
-} else {
-	// Authentication failed
-}
+```typescript
+app.get('/auth/google/callback', async (req, res) => {
+	const code = req.query['code'];
+	const state = req.query['state'];
+	const session = req.session;
+	const stateBinding = session.oauthStateBinding;
+	if (
+		typeof code !== 'string' || !code ||
+		typeof state !== 'string' || !state ||
+		session.oauthState !== state ||
+		typeof stateBinding !== 'string' || !stateBinding
+	) {
+		res.redirect('/login?error=authentication_failed');
+		return;
+	}
+
+	delete session.oauthState;
+	delete session.oauthStateBinding;
+	await new Promise<void>((resolve, reject) => {
+		session.save((error) => error ? reject(error) : resolve());
+	});
+
+	const principal = await googleAuth.authenticate({
+		code,
+		state,
+		stateBinding,
+	});
+
+	if (principal) {
+		// Store the authenticated principal in the application session.
+	} else {
+		res.redirect('/login?error=authentication_failed');
+	}
+});
 ```
 
 ### Refresh Tokens
@@ -118,18 +148,13 @@ Automatically refresh access tokens using stored refresh tokens:
 
 ```typescript
 // Retrieve stored token record for user
-const tokenRecord = await ssoTokenRepo.findOneBy({ principal_id: userId });
+// `principal` is the authenticated principal from the callback/session.
+const principalId = principal.id;
+const tokenRecord = await googleAuth.getStoredToken(principalId);
 
 // Refresh if expired
 if (tokenRecord && tokenRecord.expires_at < new Date()) {
-	const newTokens = await googleAuth['exchangeRefreshToken'](
-		tokenRecord.refresh_token!
-	);
-	
-	// Update token record with new values
-	tokenRecord.access_token = newTokens.access_token;
-	tokenRecord.expires_at = new Date(Date.now() + newTokens.expires_in * 1000);
-	await ssoTokenRepo.update(tokenRecord);
+	await googleAuth.refreshAccessToken(principalId);
 }
 ```
 
@@ -139,6 +164,15 @@ if (tokenRecord && tokenRecord.expires_at < new Date()) {
 import express from 'express';
 import session from 'express-session';
 import { GoogleAuthentication } from '@riao/authn-sso-google';
+import { Principal } from '@riao/iam';
+
+declare module 'express-session' {
+	interface SessionData {
+		principal?: Principal;
+		oauthState?: string;
+		oauthStateBinding?: string;
+	}
+}
 
 const app = express();
 
@@ -157,36 +191,65 @@ const googleAuth = new GoogleAuthentication({
 });
 
 // Redirect to Google login
-// Uses generateState() to create and store state in database for CSRF protection
+// Bind generated state to this browser session for CSRF protection.
 app.get('/auth/google', async (req, res) => {
 	try {
-		// generateState() creates a random state and stores it in the database
-		// The state will be validated in the callback handler
-		const state = await googleAuth.generateState();
+		const { state, stateBinding } = await googleAuth.generateState();
+		req.session.oauthState = state;
+		req.session.oauthStateBinding = stateBinding;
+		await new Promise<void>((resolve, reject) => {
+			req.session.save((error) => error ? reject(error) : resolve());
+		});
 		const authUrl = googleAuth.getAuthorizationUrl(state);
 		res.redirect(authUrl);
 	} catch (error) {
+		console.error('Google authentication setup failed', {
+			errorType: error instanceof Error ? error.name : typeof error,
+		});
 		res.redirect('/login?error=auth_error');
 	}
 });
 
 // Handle Google callback
 app.get('/auth/google/callback', async (req, res) => {
-	const { code, state } = req.query as { code: string; state: string };
-	
+	const code = req.query['code'];
+	const state = req.query['state'];
+	const session = req.session;
+
 	try {
-		// authenticate() validates the state against the database
-		// and handles the OAuth code exchange
-		const principal = await googleAuth.authenticate({ code, state });
-		
+		const stateBinding = session.oauthStateBinding;
+		if (
+			typeof code !== 'string' || !code ||
+			typeof state !== 'string' || !state ||
+			session.oauthState !== state ||
+			typeof stateBinding !== 'string' || !stateBinding
+		) {
+			return res.redirect('/login?error=auth_failed');
+		}
+		delete session.oauthState;
+		delete session.oauthStateBinding;
+		await new Promise<void>((resolve, reject) => {
+			session.save((saveError) =>
+				saveError ? reject(saveError) : resolve()
+			);
+		});
+
+		const principal = await googleAuth.authenticate({
+			code,
+			state,
+			stateBinding,
+		});
+
 		if (principal) {
-			req.session.userId = principal.id;
+			req.session.principal = principal;
 			res.redirect('/dashboard');
 		} else {
 			res.redirect('/login?error=auth_failed');
 		}
 	} catch (error) {
-		console.error('Authentication error:', error);
+		console.error('Google authentication operation failed', {
+			errorType: error instanceof Error ? error.name : typeof error,
+		});
 		res.redirect('/login?error=auth_error');
 	}
 });
@@ -194,29 +257,40 @@ app.get('/auth/google/callback', async (req, res) => {
 
 ## Troubleshooting
 
-### "State validation failed or state not found"
+### Invalid state
 
-This error occurs when the state parameter is not properly stored in the database before redirecting to Google.
+The callback is rejected if its state does not match the value saved in the
+browser session, the session binding is missing, or the state has expired or
+already been consumed.
 
-**Solution:** Use `generateState()` to create and store the state:
+**Solution:** Save both values returned by `generateState()` in the browser
+session before redirecting:
 
 ```typescript
-// ❌ WRONG - This won't work
+// ❌ WRONG - A manually generated state has no session binding
 app.get('/auth/google', (req, res) => {
-	const state = randomBytes(32).toString('hex'); // Not saved to database!
+	const state = randomBytes(32).toString('hex');
 	const authUrl = googleAuth.getAuthorizationUrl(state);
 	res.redirect(authUrl);
 });
 
-// ✅ CORRECT - State is saved to database
+// ✅ CORRECT - Save the generated state and binding in the browser session
 app.get('/auth/google', async (req, res) => {
-	const state = await googleAuth.generateState(); // Saves to database
+	const { state, stateBinding } = await googleAuth.generateState();
+	req.session.oauthState = state;
+	req.session.oauthStateBinding = stateBinding;
+	await new Promise<void>((resolve, reject) => {
+		req.session.save((error) => error ? reject(error) : resolve());
+	});
 	const authUrl = googleAuth.getAuthorizationUrl(state);
 	res.redirect(authUrl);
 });
 ```
 
-The `generateState()` method creates a cryptographically random state and stores it in the database with an expiration time. The `authenticate()` method then validates this state during the callback to prevent CSRF attacks.
+Store the generated state and binding in the user's session before redirecting
+to Google. On callback, require the returned state to match the session value,
+consume both session values, and pass `{ code, state, stateBinding }` to
+`authenticate()` so it can validate the browser binding and prevent CSRF.
 
 ### "Database table not found"
 
