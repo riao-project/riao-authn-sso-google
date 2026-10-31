@@ -11,6 +11,16 @@ import { Principal } from '@riao/iam';
 // eslint-disable-next-line max-len
 import { AuthenticationSSOMigrations } from '@riao/authn-sso/authentication-sso-migrations';
 
+declare module 'express-session' {
+	interface SessionData {
+		principal?: Principal;
+		userId?: string | null;
+		userEmail?: string | null;
+		oauthState?: string;
+		oauthStateBinding?: string;
+	}
+}
+
 const db = createDatabase('google_sso_example_db');
 
 /**
@@ -50,11 +60,7 @@ function logSafeFailure(operation: string, error: unknown): void {
 	});
 }
 
-declare module 'express-session' {
-	interface SessionData {
-		principal?: Principal;
-	}
-}
+export type SessionRequest = Request;
 
 // Routes
 
@@ -63,10 +69,10 @@ declare module 'express-session' {
  */
 app.get('/', (req: Request, res: Response) => {
 	const session = req.session;
-	if (session.principal) {
+	if (session.userId) {
 		res.send(`
 			<h1>Welcome!</h1>
-			<p>You are logged in.</p>
+			<p>You are logged in as: ${session.userEmail}</p>
 			<a href="/logout">Logout</a>
 		`);
 	}
@@ -83,11 +89,13 @@ app.get('/', (req: Request, res: Response) => {
  */
 app.get('/auth/google', async (req: Request, res: Response) => {
 	try {
-		// Generate and store state for CSRF protection in database
-		const state = await googleAuth.generateState();
-
-		// Get authorization URL and redirect
+		const { state, stateBinding } = await googleAuth.generateState();
+		req.session.oauthState = state;
+		req.session.oauthStateBinding = stateBinding;
 		const authUrl = googleAuth.getAuthorizationUrl(state);
+		await new Promise<void>((resolve, reject) => {
+			req.session.save((error) => error ? reject(error) : resolve());
+		});
 		res.redirect(authUrl);
 	}
 	catch (error) {
@@ -104,44 +112,68 @@ app.get('/auth/google/callback', async (req: Request, res: Response) => {
 	const state = req.query['state'];
 	const error = req.query['error'];
 
+	const session = req.session;
+
 	try {
 		// Check for errors from Google
-		if (error) {
-			console.warn('Google OAuth callback returned an error');
-			res.redirect('/?error=authentication_failed');
-			return;
+		if (typeof error === 'string' && error) {
+			throw new Error('Google authentication error');
 		}
-		if (typeof code !== 'string' || !code) {
-			res.redirect('/?error=authentication_failed');
-			return;
+
+		// Validate required parameters
+		if (
+			typeof code !== 'string' || !code ||
+			typeof state !== 'string' || !state
+		) {
+			throw new Error('Missing code or state parameter');
 		}
-		if (state !== undefined && typeof state !== 'string') {
-			res.redirect('/?error=authentication_failed');
-			return;
+		const stateBinding = session.oauthStateBinding;
+		if (
+			!session.oauthState ||
+			session.oauthState !== state ||
+			typeof stateBinding !== 'string' ||
+			!stateBinding
+		) {
+			throw new Error('Invalid OAuth state');
 		}
+		delete session.oauthState;
+		delete session.oauthStateBinding;
+		await new Promise<void>((resolve, reject) => {
+			session.save((saveError) =>
+				saveError ? reject(saveError) : resolve()
+			);
+		});
 
 		// Authenticate with Google
-		const credentials: { code: string; state?: string } = { code };
-		if (typeof state === 'string') {
-			credentials.state = state;
-		}
-		const principal = await googleAuth.authenticate(credentials);
+		const principal = await googleAuth.authenticate({
+			code,
+			state,
+			stateBinding,
+		});
 
 		if (!principal) {
-			res.redirect('/?error=authentication_failed');
-			return;
+			throw new Error('Authentication failed');
 		}
 
-		// Store the principal for downstream authorization.
-		req.session.principal = principal;
 		await new Promise<void>((resolve, reject) => {
-			req.session.save((error) => error ? reject(error) : resolve());
+			req.session.regenerate((regenerateError) =>
+				regenerateError ? reject(regenerateError) : resolve()
+			);
+		});
+		req.session.principal = principal;
+		req.session.userId = principal.id;
+		req.session.userEmail = principal.name;
+
+		await new Promise<void>((resolve, reject) => {
+			req.session.save((saveError) =>
+				saveError ? reject(saveError) : resolve()
+			);
 		});
 		res.redirect('/');
 	}
 	catch (error) {
 		logSafeFailure('Google authentication operation failed', error);
-		res.status(503).json({ error: 'Authentication unavailable' });
+		res.redirect('/?error=authentication_failed');
 	}
 });
 
@@ -168,7 +200,7 @@ app.get('/logout', (req: Request, res: Response) => {
  */
 app.get('/dashboard', (req: Request, res: Response) => {
 	const session = req.session;
-	if (!session.principal) {
+	if (!session.userId) {
 		return res.redirect('/');
 	}
 

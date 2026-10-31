@@ -24,7 +24,7 @@
 	"dependencies": {
 		"@riao/authn-sso": "^3.0.0",
 		"@riao/dbal": "^3.8.0",
-		"@riao/iam": "^5.0.0"
+		"@riao/iam": "^5.0.2"
 	},
 	"devDependencies": {
 		"@istanbuljs/nyc-config-typescript": "^1.0.2",

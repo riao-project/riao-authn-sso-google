@@ -3,7 +3,10 @@ import {
 	SSOUserInfo,
 	SSOTokenResponse,
 	SSOAuthenticationOptions,
-	throwProviderResponseError,
+	requestProviderJson,
+	validateTokenResponse,
+	validateProviderUser,
+	isProviderString,
 } from '@riao/authn-sso';
 import { Principal } from '@riao/iam';
 
@@ -31,10 +34,7 @@ export class GoogleAuthentication<
 	protected readonly scopes: string[];
 
 	constructor(options: GoogleAuthenticationOptions) {
-		super({
-			...options,
-			provider: 'google',
-		});
+		super({ ...options, provider: 'google' });
 		this.clientId = options.clientId;
 		this.clientSecret = options.clientSecret;
 		this.redirectUri = options.redirectUri;
@@ -72,34 +72,32 @@ export class GoogleAuthentication<
 	public async exchangeAuthorizationCode(
 		code: string
 	): Promise<SSOTokenResponse> {
-		const tokenUrl = 'https://oauth2.googleapis.com/token';
-
-		const response = await fetch(tokenUrl, {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/x-www-form-urlencoded',
+		const data = await requestProviderJson(
+			'https://oauth2.googleapis.com/token',
+			{
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/x-www-form-urlencoded',
+				},
+				body: new URLSearchParams({
+					client_id: this.clientId,
+					client_secret: this.clientSecret,
+					code,
+					redirect_uri: this.redirectUri,
+					grant_type: 'authorization_code',
+				}).toString(),
 			},
-			body: new URLSearchParams({
-				client_id: this.clientId,
-				client_secret: this.clientSecret,
-				code,
-				redirect_uri: this.redirectUri,
-				grant_type: 'authorization_code',
-			}).toString(),
-		});
-		if (!response.ok) {
-			await throwProviderResponseError(
-				'Google token exchange', response
-			);
-		}
-		return response.json() as Promise<SSOTokenResponse>;
+			'Google token exchange',
+			this.requestTimeoutMs
+		);
+		return validateTokenResponse(data);
 	}
 
 	/**
 	 * Fetch user information from Google userinfo endpoint
 	 */
 	protected async getUserInfo(accessToken: string): Promise<SSOUserInfo> {
-		const response = await fetch(
+		const data = await requestProviderJson(
 			'https://www.googleapis.com/oauth2/v2/userinfo',
 			{
 				method: 'GET',
@@ -107,21 +105,26 @@ export class GoogleAuthentication<
 					Authorization: `Bearer ${accessToken}`,
 					'Content-Type': 'application/json',
 				},
-			}
+			},
+			'Google user info',
+			this.requestTimeoutMs,
+			true
 		);
-		if (!response.ok) {
-			await throwProviderResponseError(
-				'Google user info', response, true
-			);
+		validateProviderUser(
+			data,
+			['email', 'name', 'picture', 'locale'],
+			true
+		);
+		if (!isProviderString(data['email'])) {
+			throw new Error('Malformed Google user response: missing email');
 		}
-		const userData = (await response.json()) as {
+		const userData = data as unknown as {
 			id: string;
 			email?: string;
 			name?: string;
 			picture?: string;
 			locale?: string;
 		};
-
 		return {
 			id: userData.id,
 			login: userData.email || '',
@@ -138,25 +141,23 @@ export class GoogleAuthentication<
 	protected async exchangeRefreshToken(
 		refreshToken: string
 	): Promise<SSOTokenResponse> {
-		const tokenUrl = 'https://oauth2.googleapis.com/token';
-
-		const response = await fetch(tokenUrl, {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/x-www-form-urlencoded',
+		const data = await requestProviderJson(
+			'https://oauth2.googleapis.com/token',
+			{
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/x-www-form-urlencoded',
+				},
+				body: new URLSearchParams({
+					client_id: this.clientId,
+					client_secret: this.clientSecret,
+					refresh_token: refreshToken,
+					grant_type: 'refresh_token',
+				}).toString(),
 			},
-			body: new URLSearchParams({
-				client_id: this.clientId,
-				client_secret: this.clientSecret,
-				refresh_token: refreshToken,
-				grant_type: 'refresh_token',
-			}).toString(),
-		});
-		if (!response.ok) {
-			await throwProviderResponseError(
-				'Google token refresh', response
-			);
-		}
-		return response.json() as Promise<SSOTokenResponse>;
+			'Google token refresh',
+			this.requestTimeoutMs
+		);
+		return validateTokenResponse(data);
 	}
 }
