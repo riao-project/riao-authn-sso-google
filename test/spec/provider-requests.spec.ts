@@ -22,6 +22,7 @@ describe('Google provider requests', () => {
 	});
 
 	it('uses the configured timeout for token and user requests', async () => {
+		const timeoutSpy = spyOn(AbortSignal, 'timeout').and.callThrough();
 		const fetchSpy = spyOn(global, 'fetch').and.resolveTo(
 			new Response(JSON.stringify({
 				access_token: 'token',
@@ -30,6 +31,7 @@ describe('Google provider requests', () => {
 		);
 		await auth.exchangeAuthorizationCode('code');
 		expect(fetchSpy.calls.mostRecent().args[1]?.signal).toBeDefined();
+		expect(timeoutSpy).toHaveBeenCalledWith(options.requestTimeoutMs);
 
 		fetchSpy.and.resolveTo(new Response(JSON.stringify({
 			id: 'id',
@@ -38,6 +40,8 @@ describe('Google provider requests', () => {
 		})));
 		await auth['getUserInfo']('token');
 		expect(fetchSpy.calls.mostRecent().args[1]?.signal).toBeDefined();
+		expect(timeoutSpy).toHaveBeenCalledWith(options.requestTimeoutMs);
+		expect(timeoutSpy).toHaveBeenCalledTimes(2);
 	});
 
 	it('classifies expected provider rejections', async () => {
